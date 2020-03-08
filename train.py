@@ -9,7 +9,7 @@ from tensorboardX import SummaryWriter
 from torch.utils.data import DataLoader
 from collections import OrderedDict, defaultdict
 
-from ptb import PTB
+from lenta import Lenta
 from utils import to_var, idx2word, expierment_name
 from model import SentenceVAE
 
@@ -21,14 +21,13 @@ def main(args):
 
     datasets = OrderedDict()
     for split in splits:
-        datasets[split] = PTB(
+        datasets[split] = Lenta(
             data_dir=args.data_dir,
             split=split,
             create_data=args.create_data,
             max_sequence_length=args.max_sequence_length,
             min_occ=args.min_occ
         )
-
     model = SentenceVAE(
         vocab_size=datasets['train'].vocab_size,
         sos_idx=datasets['train'].sos_idx,
@@ -43,7 +42,8 @@ def main(args):
         embedding_dropout=args.embedding_dropout,
         latent_size=args.latent_size,
         num_layers=args.num_layers,
-        bidirectional=args.bidirectional
+        bidirectional=args.bidirectional,
+        is_variational=args.not_variational
         )
 
     if torch.cuda.is_available():
@@ -60,14 +60,47 @@ def main(args):
     save_model_path = os.path.join(args.save_model_path, ts)
     os.makedirs(save_model_path)
 
-    def kl_anneal_function(anneal_function, step, k, x0):
-        if anneal_function == 'logistic':
+    def kl_anneal_function(anneal_function, step, k, x0, T=40000, L=38, R=0.5):
+        
+        if anneal_function=='constant':
+            return 1
+        elif anneal_function=='zero':
+            return 0
+        elif anneal_function=='cyclic':
+            cycle_length=T/float(L)
+            local_step=step%(cycle_length)
+            weight=min(1,local_step/(R*cycle_length))
+            # print(step,k,x0,weight)
+            return weight
+        elif anneal_function=='cyclic-zero':
+            if step>=T/2:
+                return 0
+            cycle_length=T/(2*float(L))
+            local_step=step%(cycle_length)
+            weight=min(1,local_step/(R*cycle_length))
+            # print(step,k,x0,weight)
+            return weight
+        elif anneal_function == 'logistic':
             return float(1/(1+np.exp(-k*(step-x0))))
         elif anneal_function == 'linear':
             return min(1, step/x0)
 
+    def calculatePPL(logp, batch):
+        _logp=np.array(logp.cpu().data)
+        length=np.array(batch['length'].cpu().data)
+        target=np.array(batch['target'].cpu().data)
+
+        sum_ppl=0
+        for bi in range(target.shape[0]):
+            s=0
+            for i in range(length[bi]):
+                s+=_logp[bi][i][target[bi][i]]
+            ppl=2**(-s/length[bi])
+            sum_ppl+=ppl
+        return sum_ppl/target.shape[0]
+
     NLL = torch.nn.NLLLoss(size_average=False, ignore_index=datasets['train'].pad_idx)
-    def loss_fn(logp, target, length, mean, logv, anneal_function, step, k, x0):
+    def loss_fn(logp, target, length, mean, logv, anneal_function, step, k, x0, T=40000, L=38, R=0.5):
 
         # cut-off unnecessary padding from target, and flatten
         target = target[:, :torch.max(length).data[0]].contiguous().view(-1)
@@ -78,14 +111,16 @@ def main(args):
 
         # KL Divergence
         KL_loss = -0.5 * torch.sum(1 + logv - mean.pow(2) - logv.exp())
-        KL_weight = kl_anneal_function(anneal_function, step, k, x0)
+        KL_weight = kl_anneal_function(anneal_function, step, k, x0, T=T, L=L, R=R)
 
+        
         return NLL_loss, KL_loss, KL_weight
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate)
 
     tensor = torch.cuda.FloatTensor if torch.cuda.is_available() else torch.Tensor
     step = 0
+    
     for epoch in range(args.epochs):
 
         for split in splits:
@@ -97,6 +132,10 @@ def main(args):
                 num_workers=cpu_count(),
                 pin_memory=torch.cuda.is_available()
             )
+
+            T=len(data_loader)*args.epochs
+            L=args.L
+            R=args.R
 
             tracker = defaultdict(tensor)
 
@@ -116,10 +155,11 @@ def main(args):
 
                 # Forward pass
                 logp, mean, logv, z = model(batch['input'], batch['length'])
-
                 # loss calculation
                 NLL_loss, KL_loss, KL_weight = loss_fn(logp, batch['target'],
-                    batch['length'], mean, logv, args.anneal_function, step, args.k, args.x0)
+                    batch['length'], mean, logv, args.anneal_function, step, args.k, args.x0, T=T, L=L, R=R)
+
+                perplexity=calculatePPL(logp, batch)
 
                 loss = (NLL_loss + KL_weight * KL_loss)/batch_size
 
@@ -139,10 +179,12 @@ def main(args):
                     writer.add_scalar("%s/NLL Loss"%split.upper(), NLL_loss.data[0]/batch_size, epoch*len(data_loader) + iteration)
                     writer.add_scalar("%s/KL Loss"%split.upper(), KL_loss.data[0]/batch_size, epoch*len(data_loader) + iteration)
                     writer.add_scalar("%s/KL Weight"%split.upper(), KL_weight, epoch*len(data_loader) + iteration)
-
+                    writer.add_scalar("%s/NLL Loss"%split.upper(), perplexity/batch_size, epoch*len(data_loader) + iteration)
                 if iteration % args.print_every == 0 or iteration+1 == len(data_loader):
-                    print("%s Batch %04d/%i, Loss %9.4f, NLL-Loss %9.4f, KL-Loss %9.4f, KL-Weight %6.3f"
-                        %(split.upper(), iteration, len(data_loader)-1, loss.data[0], NLL_loss.data[0]/batch_size, KL_loss.data[0]/batch_size, KL_weight))
+                    print("%s Batch %04d/%i, Loss %9.4f, NLL-Loss %9.4f, KL-Loss %9.4f, KL-Weight %6.3f, perplexity %6.3f"
+                        %(split.upper(), iteration, len(data_loader)-1, loss.data[0], NLL_loss.data[0]/batch_size, KL_loss.data[0]/batch_size, KL_weight, perplexity))
+                    with open('curves/%s_loss.csv'%split.upper(),'a') as fout:
+                         fout.write("{}/{}\t{}\t{}\t{}\t{}\t{}\n".format(iteration, len(data_loader)-1, loss.data[0], NLL_loss.data[0]/batch_size, KL_loss.data[0]/batch_size, KL_weight, perplexity))
 
                 if split == 'valid':
                     if 'target_sents' not in tracker:
@@ -169,7 +211,6 @@ def main(args):
                 torch.save(model.state_dict(), checkpoint_path)
                 print("Model saved at %s"%checkpoint_path)
 
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -192,15 +233,19 @@ if __name__ == '__main__':
     parser.add_argument('-ls', '--latent_size', type=int, default=16)
     parser.add_argument('-wd', '--word_dropout', type=float, default=0)
     parser.add_argument('-ed', '--embedding_dropout', type=float, default=0.5)
-
-    parser.add_argument('-af', '--anneal_function', type=str, default='logistic')
+    parser.add_argument('-af', '--anneal_function', type=str, default='linear')
     parser.add_argument('-k', '--k', type=float, default=0.0025)
-    parser.add_argument('-x0', '--x0', type=int, default=2500)
+    parser.add_argument('-x0', '--x0', type=int, default=40000)
 
     parser.add_argument('-v','--print_every', type=int, default=50)
     parser.add_argument('-tb','--tensorboard_logging', action='store_true')
     parser.add_argument('-log','--logdir', type=str, default='logs')
     parser.add_argument('-bin','--save_model_path', type=str, default='bin')
+    parser.add_argument('-not_var', '--not_variational', action='store_false')
+    
+    # Cyclic parameters
+    parser.add_argument('-R', '--R', type=float, default=0.5)
+    parser.add_argument('-L', '--L', type=float, default=38)
 
     args = parser.parse_args()
 
@@ -208,7 +253,7 @@ if __name__ == '__main__':
     args.anneal_function = args.anneal_function.lower()
 
     assert args.rnn_type in ['rnn', 'lstm', 'gru']
-    assert args.anneal_function in ['logistic', 'linear']
+    assert args.anneal_function in ['logistic', 'linear', 'constant', 'cyclic','zero','cyclic-zero']
     assert 0 <= args.word_dropout <= 1
 
     main(args)
