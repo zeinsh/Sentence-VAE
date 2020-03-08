@@ -1,0 +1,18 @@
+## zero
+Unique generated out of 10000 10000
+Unique generated/ not in train set 10000
+## cyclic
+Unique generated out of 10000 8868
+Unique generated/ not in train set 8752
+## constant
+Unique generated out of 10000 230
+Unique generated/ not in train set 224
+## linear
+Unique generated out of 10000 8810
+Unique generated/ not in train set 8694
+## seqGAN
+Unique generated out of 10000 9983
+Unique generated/ not in train set 9983
+## seqGAN-pre
+Unique generated out of 10000 9981
+Unique generated/ not in train set 9981
