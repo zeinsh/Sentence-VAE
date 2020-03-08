@@ -1,0 +1,4 @@
+Mean= 11.978465544871796
+std= 6.133549518568307
+total number of words 119593
+number of unique words in Dataset 9968

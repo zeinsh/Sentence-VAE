@@ -1,0 +1,16 @@
+Mean= 11.978465544871796
+std= 6.133549518568307
+total number of words 119593
+number of unique words in Dataset 9968
+Mean= 13.8705
+std= 6.643713551170007
+total number of words 138705
+number of unique words in Dataset 12004
+Mean= 13.5267
+std= 5.989080656494785
+total number of words 135267
+number of unique words in Dataset 11430
+Mean= 13.5267
+std= 5.989080656494785
+total number of words 135267
+number of unique words in Dataset 11430

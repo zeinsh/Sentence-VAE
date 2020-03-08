@@ -1,0 +1,16 @@
+Mean= 10.5245
+std= 2.236515090492349
+total number of words 105245
+number of unique words in Dataset 5324
+Mean= 10.5245
+std= 2.236515090492349
+total number of words 105245
+number of unique words in Dataset 5324
+Mean= 10.5245
+std= 2.236515090492349
+total number of words 105245
+number of unique words in Dataset 5324
+Mean= 10.5245
+std= 2.236515090492349
+total number of words 105245
+number of unique words in Dataset 5324

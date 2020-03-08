@@ -1,0 +1,16 @@
+Mean= 8.6074
+std= 2.269243318817971
+total number of words 86074
+number of unique words in Dataset 353
+Mean= 8.6074
+std= 2.269243318817971
+total number of words 86074
+number of unique words in Dataset 353
+Mean= 8.6074
+std= 2.269243318817971
+total number of words 86074
+number of unique words in Dataset 353
+Mean= 8.6074
+std= 2.269243318817971
+total number of words 86074
+number of unique words in Dataset 353

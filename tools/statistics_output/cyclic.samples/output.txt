@@ -1,0 +1,16 @@
+Mean= 11.2601
+std= 4.774415984180683
+total number of words 112601
+number of unique words in Dataset 4550
+Mean= 11.2601
+std= 4.774415984180683
+total number of words 112601
+number of unique words in Dataset 4550
+Mean= 11.2601
+std= 4.774415984180683
+total number of words 112601
+number of unique words in Dataset 4550
+Mean= 11.2601
+std= 4.774415984180683
+total number of words 112601
+number of unique words in Dataset 4550
